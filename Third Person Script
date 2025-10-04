@@ -1,0 +1,140 @@
+-- LocalScript: ThirdPersonMouseCamera
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+
+local distance = 9
+local height = 4.5
+local sensitivity = 0.2
+
+local yaw = 0
+local pitch = 0
+
+local MIN_PITCH = -75
+local MAX_PITCH = 75
+
+local cameraLocked = true
+local renderConnection = nil
+local crosshair = nil
+
+-- Setup crosshair reference (if GUI exists)
+local function getCrosshair()
+	if not crosshair then
+		local screenGui = player:WaitForChild("PlayerGui"):WaitForChild("CrosshairGui", 5)
+		if screenGui then
+			crosshair = screenGui:FindFirstChild("Crosshair")
+		end
+	end
+	return crosshair
+end
+
+local function setOwnNameplateVisibility(visible)
+	local character = player.Character
+	if not character then return end
+
+	local head = character:FindFirstChild("Head")
+	if not head then return end
+
+	-- Try both known UI elements
+	local levelName = head:FindFirstChild("LevelName")
+	local levelName = head:FindFirstChild("HealthBarTemplate")
+
+
+	if levelName and levelName:IsA("BillboardGui") then
+		levelName.Enabled = visible
+	end
+	
+end
+
+
+
+local function lockCamera()
+	
+	setOwnNameplateVisibility(false)
+
+	cameraLocked = true
+	UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+	UserInputService.MouseIconEnabled = false
+	camera.CameraType = Enum.CameraType.Scriptable
+
+	local character = player.Character
+	if not character then return end
+
+	local root = character:WaitForChild("HumanoidRootPart")
+
+	-- Start camera render loop
+	renderConnection = RunService:BindToRenderStep("ThirdPersonCamera", Enum.RenderPriority.Camera.Value, function()
+		local cameraRotation = CFrame.Angles(0, math.rad(yaw), 0) * CFrame.Angles(math.rad(pitch), 0, 0) -- Inverted Y fixed
+		local offset = cameraRotation:VectorToWorldSpace(Vector3.new(0, height, distance))
+
+		local cameraPosition = root.Position - offset
+		camera.CFrame = CFrame.new(cameraPosition, root.Position + Vector3.new(0, height, 0))
+
+		local lookVector = (camera.CFrame.LookVector * Vector3.new(1, 0, 1)).Unit
+		root.CFrame = CFrame.new(root.Position, root.Position + lookVector)
+	end)
+
+	local ch = getCrosshair()
+	if ch then
+		ch.Visible = true
+	end
+	
+	setOwnNameplateVisibility(false)
+
+end
+
+local function unlockCamera()
+	cameraLocked = false
+	UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+	UserInputService.MouseIconEnabled = true
+	camera.CameraType = Enum.CameraType.Custom
+
+	RunService:UnbindFromRenderStep("ThirdPersonCamera")
+
+	local ch = getCrosshair()
+	if ch then
+		ch.Visible = false
+	end
+	
+	setOwnNameplateVisibility(true)
+	
+end
+
+-- Handle mouse movement
+UserInputService.InputChanged:Connect(function(input, gameProcessed)
+	if cameraLocked and input.UserInputType == Enum.UserInputType.MouseMovement then
+		yaw = yaw - input.Delta.X * sensitivity
+		pitch = math.clamp(pitch + input.Delta.Y * sensitivity, MIN_PITCH, MAX_PITCH) -- fixed Y inversion
+	end
+end)
+
+-- Handle camera toggle with "C"
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if input.KeyCode == Enum.KeyCode.C and not gameProcessed then
+		if cameraLocked then
+			unlockCamera()
+		else
+			lockCamera()
+		end
+	end
+
+end)
+
+-- On character spawn
+player.CharacterAdded:Connect(function(character)
+	-- Reset yaw/pitch to avoid sudden jump
+	yaw = 0
+	pitch = 0
+	wait(0.1)
+	if cameraLocked then
+		lockCamera()
+	end
+end)
+
+if player.Character then
+	lockCamera()
+end
